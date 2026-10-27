@@ -97,8 +97,18 @@ node src/reconcile.js
 
 ---
 
-## 四、 云端部署指南 (Vercel)
+## 四、 🌐 官方在线云端服务 (Vercel Live Endpoints)
 
-1. 在 Vercel 后台将 **Root Directory** 设置为 `Level 2/server`；
-2. 配置环境变量：`PAY_TO=0xdcD7DAFafb0EF3d50bDdB480Dbd503Fa6D1B6C09`；
-3. 一键部署即可上线全量 11 个 x402 付费接口。
+本项目服务端已正式部署上线至 Vercel，全球任意客户端无需在本地运行任何服务端代码，即可直接跨网调用：
+
+- 🚀 **官方生产基准地址**：`https://x402-survival-l2a-server.vercel.app`
+- 💚 **在线健康检查**：[`https://x402-survival-l2a-server.vercel.app/health`](https://x402-survival-l2a-server.vercel.app/health)
+- 📋 **全量 API 在线目录与定价**：[`https://x402-survival-l2a-server.vercel.app/api/catalog`](https://x402-survival-l2a-server.vercel.app/api/catalog)
+- ⚡ **7 大核心生存微服务入口**：`https://x402-survival-l2a-server.vercel.app/api/survival/...`
+- 🚫 **4 大干扰噪音微服务入口**：`https://x402-survival-l2a-server.vercel.app/api/noise/...`
+
+> **直接使用方式**：使用者只需在客户端 `client/.env` 中配置：
+> ```ini
+> TARGET_URL=https://x402-survival-l2a-server.vercel.app
+> ```
+> 双击 `运行探险决策Agent.bat` 即可直接向云端发起链上微支付调用！
