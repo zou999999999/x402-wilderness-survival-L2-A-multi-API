@@ -69,7 +69,11 @@ Level 2/
 cd server
 npm start
 ```
-服务将在 `http://localhost:3000` 启动，访问 `http://localhost:3000/health` 查看服务状态，访问 `http://localhost:3000/api/catalog` 查看全量 API 目录。
+服务将在 `http://localhost:3000` 启动，暴露以下核心端点：
+- 💚 **服务健康检查**：`http://localhost:3000/health`
+- 📋 **全量 11 API 服务目录与定价**：`http://localhost:3000/api/catalog`
+- ⚡ **7 大核心野外生存微服务**：`http://localhost:3000/api/survival/[earthquake|storm|flood|terrain|dust|sunlight|geomagnetic]`（每次 $0.001）
+- 🚫 **4 大干扰噪音微服务**：`http://localhost:3000/api/noise/[forex|catfact|crypto|iss]`（每次 $0.001）
 
 ### 2. 运行生存决策 Agent
 双击运行 `运行探险决策Agent.bat` 或执行：
