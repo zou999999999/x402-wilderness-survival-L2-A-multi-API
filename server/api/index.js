@@ -47,8 +47,6 @@ app.get('/health', (_req, res) => {
       payTo,
       pricePerCall: PRICE_USDC,
       totalEndpoints: API_CATALOG.length,
-      coreCount: API_CATALOG.filter(x => !x.isNoise).length,
-      noiseCount: API_CATALOG.filter(x => x.isNoise).length,
       facilitator: FACILITATOR_URL,
       timestamp: new Date().toISOString()
     });

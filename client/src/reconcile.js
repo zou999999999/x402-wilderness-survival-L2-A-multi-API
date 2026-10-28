@@ -8,6 +8,13 @@ import { createPublicClient, http, formatUnits } from 'viem';
 import { baseSepolia } from 'viem/chains';
 import { getPayerAddress, getExpectedPayToAddress } from './config/wallet.js';
 
+// 若环境有代理，自动配置 undici 全局分发器
+try {
+  const { ProxyAgent, setGlobalDispatcher } = await import('undici');
+  const proxyUrl = process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy || 'http://127.0.0.1:7897';
+  setGlobalDispatcher(new ProxyAgent(proxyUrl));
+} catch {}
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const reportsDir = path.resolve(__dirname, '../reports');
@@ -59,7 +66,7 @@ async function verifyTx(client, txHash, expectedPayTo) {
       console.log(`   Amount: ${formatUnits(rawAmount, 6)} USDC`);
     }
   } catch (err) {
-    console.log(`⚠️ 链上查询反馈: ${err.message}`);
+    console.log(`⚠️ 核验异常: ${err.message}`);
   }
 }
 
@@ -78,7 +85,7 @@ async function main() {
 
   const client = createPublicClient({
     chain: baseSepolia,
-    transport: http(undefined, { timeout: 3000 })
+    transport: http(undefined, { timeout: 3500, retryCount: 0 })
   });
 
   // 1. 检查付款方与收款方即时余额
@@ -92,7 +99,7 @@ async function main() {
       });
       console.log(`💰 付款方 USDC 当前余额: ${formatUnits(payerBal, 6)} USDC`);
     } catch (e) {
-      console.warn(`查询付款方余额异常: ${e.message}`);
+      console.warn(`查询付款方余额提示: ${e.message}`);
     }
   }
 
@@ -106,7 +113,7 @@ async function main() {
       });
       console.log(`💰 收款方 USDC 当前余额: ${formatUnits(payeeBal, 6)} USDC`);
     } catch (e) {
-      console.warn(`查询收款方余额异常: ${e.message}`);
+      console.warn(`查询收款方余额提示: ${e.message}`);
     }
   }
 
@@ -126,14 +133,14 @@ async function main() {
       console.log(`\n📂 正在读取最新决策报告: ${latestFile}`);
       const rep = JSON.parse(fs.readFileSync(fullPath, 'utf8'));
 
-      console.log(`🎯 探险目标: ${rep.expedition?.name || '未知'}`);
-      console.log(`📋 计划调用的 API 数量: ${rep.selectedApisCount} 个`);
-      console.log(`🛡️ 拦截过滤的噪音 API 数量: ${rep.filteredNoiseCount} 个`);
-
       const auditList = rep.purchaseAudit || [];
+      console.log(`🎯 探险目标: ${rep.expedition?.name || '未知'}`);
+      console.log(`📋 计划调用的 API 数量: ${rep.approvedApisCount || rep.selectedApisCount || auditList.length} 个`);
+      console.log(`🛡️ 自主排除的无关 API 数量: ${rep.rejectedApisCount ?? rep.filteredNoiseCount ?? 0} 个`);
+
       console.log(`\n🧾 账单交易清单 (${auditList.length} 笔):`);
       for (const item of auditList) {
-        console.log(` - [${item.status}] ${item.name} (${item.price}): Tx=${item.txHash?.slice(0, 20)}... | 耗时=${item.latencyMs}ms`);
+        console.log(` - [${item.status}] ${item.name} (${item.price}): ${item.txHash ? 'Tx=' + item.txHash.slice(0, 20) + '...' : '未生成Tx (' + (item.error || '失败') + ')'} | 耗时=${item.latencyMs || 0}ms`);
       }
     }
   }

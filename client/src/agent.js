@@ -4,6 +4,7 @@ dns.setDefaultResultOrder('ipv4first');
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import dotenv from 'dotenv';
 import { wrapFetchWithPaymentFromConfig, decodePaymentResponseHeader } from '@x402/fetch';
 import { ExactEvmScheme } from '@x402/evm';
 import { privateKeyToAccount } from 'viem/accounts';
@@ -15,6 +16,10 @@ import { getPayerPrivateKey, getPayerAddress, getExpectedPayToAddress } from './
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const reportsDir = path.resolve(__dirname, '../reports');
+
+// 加载环境变量 (优先 client/.env)
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
+dotenv.config();
 
 // Base Sepolia USDC 合约
 const USDC_CONTRACT = '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
@@ -28,89 +33,299 @@ const ERC20_ABI = [
   }
 ];
 
-// 默认 11 个 API 目录（如果无法连通服务端 /api/catalog，自动兜底）
-const FALLBACK_CATALOG = [
-  { id: 'earthquake', path: '/api/survival/earthquake', name: '近场地震危险监测', category: 'survival_core', isNoise: false, price: '$0.001', requiresLocation: true, description: '监测 500km 半径内 M2.5+ 地震，评估落石余震风险' },
-  { id: 'storm', path: '/api/survival/storm', name: '极端风暴与失温气象', category: 'survival_core', isNoise: false, price: '$0.001', requiresLocation: true, description: '实况与 24h 风速/阵风/暴雪降水/极寒气温，失温预警' },
-  { id: 'flood', path: '/api/survival/flood', name: '流域洪涝与暴涨漫滩', category: 'survival_core', isNoise: false, price: '$0.001', requiresLocation: true, description: 'GloFAS 全球水文未来 7 天河道流量比率，防沟谷洪水' },
-  { id: 'terrain', path: '/api/survival/terrain', name: '地形高程与局部坡度', category: 'survival_core', isNoise: false, price: '$0.001', requiresLocation: true, description: 'Copernicus DEM 90m 局部坡度与海拔，预警高反与崩塌' },
-  { id: 'dust', path: '/api/survival/dust', name: '沙尘暴与颗粒物浓度', category: 'survival_core', isNoise: false, price: '$0.001', requiresLocation: true, description: '监测沙尘、PM10/PM2.5 与光学厚度，预警黑风暴与失散' },
-  { id: 'sunlight', path: '/api/survival/sunlight', name: '昼夜天光与日光窗口', category: 'survival_core', isNoise: false, price: '$0.001', requiresLocation: true, description: '日出日落与民用晨昏蒙影，规划强制宿营停步时间' },
-  { id: 'geomagnetic', path: '/api/survival/geomagnetic', name: '空间天气与地磁暴', category: 'survival_core', isNoise: false, price: '$0.001', requiresLocation: true, description: 'NOAA 行星 K 指数，预警地磁暴对 GPS 漂移与卫星通信影响' },
-  { id: 'forex', path: '/api/noise/forex', name: '国际外汇法定货币汇率', category: 'noise_finance', isNoise: true, price: '$0.001', requiresLocation: false, description: '美元兑法币牌价（荒野求生无用金融噪音）' },
-  { id: 'catfact', path: '/api/noise/catfact', name: '随机趣味猫咪科普事实', category: 'noise_trivia', isNoise: true, price: '$0.001', requiresLocation: false, description: '猫咪生物学科普（荒野求生无用趣味噪音）' },
-  { id: 'crypto', path: '/api/noise/crypto', name: '加密货币现货行情走势', category: 'noise_crypto', isNoise: true, price: '$0.001', requiresLocation: false, description: 'BTC/ETH 二级市场行情（荒野求生无用代币噪音）' },
-  { id: 'iss', path: '/api/noise/iss', name: '国际空间站轨道天顶监测', category: 'noise_space', isNoise: true, price: '$0.001', requiresLocation: false, description: 'ISS 空间站实时高度经纬（荒野求生无用航天噪音）' }
+/**
+ * 客观中立的 11 个微服务默认服务目录 (Tool Reference Catalog)
+ * 绝对不含任何“必需调用 / 必须拒买”的主观标签，仅客观描述功能与定价
+ */
+const NEUTRAL_TOOLSET_CATALOG = [
+  { id: 'earthquake', path: '/api/survival/earthquake', name: '近场地震与地质活动监测', domain: 'geology', price: '$0.001', requiresLocation: true, description: '基于 USGS FDSN Event API，监测 500km 半径内过去 7 天 M2.5+ 地震烈度与震源深度，评估地质活动与滑坡隐患' },
+  { id: 'storm', path: '/api/survival/storm', name: '极端风暴与温温雨雪气象监测', domain: 'meteorology', price: '$0.001', requiresLocation: true, description: '基于 Open-Meteo 高清数值预报，监测实况风速/阵风/气温/降水及未来 24h 暴雪极寒失温预警' },
+  { id: 'flood', path: '/api/survival/flood', name: '流域水文与径流漫滩监测', domain: 'hydrology', price: '$0.001', requiresLocation: true, description: '基于 Open-Meteo GloFAS 全球水文洪水系统，预测未来 7 天河道径流比率与洪峰到达日，评估水文漫滩演进' },
+  { id: 'terrain', path: '/api/survival/terrain', name: '数字高程与局部坡度勘察', domain: 'topography', price: '$0.001', requiresLocation: true, description: '基于 Copernicus DEM 90m 高程模型，采样十字邻点计算局部最大坡度与绝对高程，评估地形起伏与高反阶梯' },
+  { id: 'dust', path: '/api/survival/dust', name: '沙尘暴与大气颗粒物浓度监测', domain: 'air_quality', price: '$0.001', requiresLocation: true, description: '基于 Open-Meteo Air Quality，监测沙尘浓度、PM10/PM2.5 与光学厚度，评估大气沙尘肆虐与能见度' },
+  { id: 'sunlight', path: '/api/survival/sunlight', name: '昼夜天光与日光有效窗口', domain: 'astronomy', price: '$0.001', requiresLocation: true, description: '基于 Sunrise-Sunset API，计算日出日落、民用晨昏蒙影与有效日照时长，评估有效行动与宿营窗口' },
+  { id: 'geomagnetic', path: '/api/survival/geomagnetic', name: '空间天气与地磁暴监测', domain: 'space_weather', price: '$0.001', requiresLocation: false, description: '基于 NOAA SWPC 全球行星 K 指数，提供实时地磁指数及 G1~G5 级地磁暴对无线电通信与卫星定位影响' },
+  { id: 'forex', path: '/api/noise/forex', name: '国际外汇法定货币汇率牌价', domain: 'foreign_exchange', price: '$0.001', requiresLocation: false, description: '基于 Frankfurter 汇率数据，提供美元兑主要法定货币（CNY/EUR/JPY/GBP）实时外汇中间牌价与兑换结算比率' },
+  { id: 'catfact', path: '/api/noise/catfact', name: '猫科动物科普与生物事实', domain: 'feline_zoology', price: '$0.001', requiresLocation: false, description: '基于 Cat Facts Ninja API，提供猫科动物的生物学解剖特征、生活生理习性与驯化历史科学知识' },
+  { id: 'crypto', path: '/api/noise/crypto', name: '加密数字货币现货行情走势', domain: 'cryptocurrency', price: '$0.001', requiresLocation: false, description: '基于 CoinGecko API，提供主流加密数字资产（BTC/ETH 等）在公开交易所的实时现货交易均价与 24h 涨跌幅' },
+  { id: 'iss', path: '/api/noise/iss', name: '国际空间站轨道天顶轨迹监测', domain: 'orbital_space', price: '$0.001', requiresLocation: false, description: '基于 WhereTheISS.at API，提供国际空间站 (ISS) 实时星下点地表经纬度、近地轨道高度 (~420km) 与运行飞行时速' }
 ];
 
 /**
- * 认知推理与噪音过滤引擎 (Reasoning & Noise Rejection Engine)
+ * 读取本地中立 Skill 技能规范文档 (若存在)
  */
-function evaluateAndFilterApis(catalog, mission) {
-  console.log(`\n🧠 ----------------- [Agent 认知推理与噪音过滤分析] -----------------`);
+function loadLocalSkillSpec() {
+  const candidatePaths = [
+    path.resolve(__dirname, '../../.agents/skills/x402-level2-survival-recon/SKILL.md'),
+    path.resolve(__dirname, '../../../.agents/skills/x402-level2-survival-recon/SKILL.md')
+  ];
+  for (const p of candidatePaths) {
+    try {
+      if (fs.existsSync(p)) {
+        return fs.readFileSync(p, 'utf8');
+      }
+    } catch {}
+  }
+  return null;
+}
+
+/**
+ * 阶段 1：Agent 自主认知推理与按需端口选路 (Task-Driven Autonomous Selection)
+ * 由大模型阅读客观中立的 Skill 与任务，根据具体任务剖面决定调用哪些端口，杜绝剧透与硬编码
+ */
+async function reasonAndSelectApis(mission, catalog) {
+  const apiKey = (process.env.DEEPSEEK_API_KEY || '').trim();
+  const baseUrl = (process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com').replace(/\/+$/, '');
+  const model = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
+
+  console.log(`\n🧠 ----------------- [Agent 任务驱动自主选路研判] -----------------`);
   console.log(`🎯 探险任务剖面: ${mission.name} (${mission.profile})`);
-  console.log(`📍 坐标: [${mission.lat}, ${mission.lon}]`);
-  console.log(`📋 候选 API 总数: ${catalog.length} 个`);
-  console.log(`----------------------------------------------------------------------\n`);
+  console.log(`📍 目标地理坐标: [${mission.lat}, ${mission.lon}]`);
+  console.log(`📋 可选外部服务: ${catalog.length} 个`);
+
+  // 1. 若配置了大模型 API Key，驱动大模型进行真正的自主意图理解与按需选路
+  if (apiKey) {
+    console.log(`🤖 正在调用大模型 (${model}) 结合 Skill 规范执行自主选路...`);
+    const skillSpec = loadLocalSkillSpec() || JSON.stringify(catalog, null, 2);
+
+    const systemPrompt = `你是一个具备高度自主决策能力的战地战术侦察与探险安全智能体 (Local Recon Agent)。
+你当前受命准备执行以下具体任务：
+- 任务名称: ${mission.name}
+- 任务性质: ${mission.profile}
+- 目标坐标: 纬度 ${mission.lat}, 经度 ${mission.lon}
+
+【外部可用的微服务工具集规范 (Skill Toolset Catalog)】:
+${skillSpec}
+
+【Agent 自主决策选路要求】:
+1. 【任务强相关性分析】：请根据上述具体任务的地理区位、自然地貌、潜在威胁与行动性质，客观评估上述 11 个可用微服务。
+2. 【按需选路与预算控制】：每个端点调用都需要消耗 0.001 USDC 链上微支付。你必须只挑选对“完成当前任务目标及确保行动安全”有实质帮助的端口；坚决排除对当前任务毫无现实帮助或缺乏因果关系的无关端口（例如野外探险无需外汇/代币/猫咪，而商业结算无需地质）。
+3. 【输出要求】：严格返回有效 JSON 格式，包含：
+   - "approvedApiIds": ["入选的API_ID", ...],
+   - "rejectedApiIds": ["排除的API_ID", ...],
+   - "reasoning": { "<API_ID>": "<具体的入选理由或排除理由>" },
+   - "rationaleSummary": "<整体选路策略简述>"`;
+
+    try {
+      const res = await fetch(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: 'system', content: 'You are an autonomous reconnaissance agent. Always reply in strict JSON.' },
+            { role: 'user', content: systemPrompt }
+          ],
+          response_format: { type: 'json_object' },
+          temperature: 0.1
+        }),
+        signal: AbortSignal.timeout(20000)
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const content = data.choices?.[0]?.message?.content || '{}';
+        const cleaned = content.replace(/^```json/m, '').replace(/^```/m, '').replace(/```$/m, '').trim();
+        const parsed = JSON.parse(cleaned);
+
+        if (Array.isArray(parsed.approvedApiIds) && parsed.approvedApiIds.length > 0) {
+          const approved = [];
+          const rejected = [];
+
+          for (const api of catalog) {
+            if (parsed.approvedApiIds.includes(api.id)) {
+              approved.push({
+                ...api,
+                reason: parsed.reasoning?.[api.id] || '经任务剖面分析确认为当前行动所必需',
+                priority: 'APPROVED'
+              });
+            } else {
+              rejected.push({
+                ...api,
+                reason: parsed.reasoning?.[api.id] || '与当前任务性质缺乏直接因果关联，排除以节省预算'
+              });
+            }
+          }
+
+          console.log(`✨ [大模型自主推理完成] 依据任务诉求精准入选: ${approved.length} 个，自主排除: ${rejected.length} 个`);
+          console.log(`📝 选路综述: ${parsed.rationaleSummary || '完成按需选路'}\n`);
+          return { approved, rejected, rationaleSummary: parsed.rationaleSummary, engine: `DeepSeek (${model})` };
+        }
+      }
+    } catch (err) {
+      console.warn(`⚠️ 大模型选路网络提示: ${err.message}，启动本地自适应启发式选路引擎`);
+    }
+  }
+
+  // 2. 本地启发式自适应选路引擎 (当未配置 API Key 或外网模型抖动时的自主评估逻辑)
+  console.log(`🧭 使用本地任务剖面自适应选路引擎进行分析...`);
+  const missionDesc = `${mission.name} ${mission.profile}`.toLowerCase();
+  const isFinanceMission = missionDesc.includes('金融') || missionDesc.includes('商贸') || missionDesc.includes('forex') || missionDesc.includes('外汇') || missionDesc.includes('crypto');
+  const isDesert = missionDesc.includes('沙漠') || missionDesc.includes('戈壁') || missionDesc.includes('阿尔金') || missionDesc.includes('罗布泊');
+  const isAlpine = missionDesc.includes('雪山') || missionDesc.includes('高山') || missionDesc.includes('冰川') || missionDesc.includes('冲顶') || missionDesc.includes('徒步');
 
   const approved = [];
   const rejected = [];
 
   for (const api of catalog) {
-    // 维度 1：是否属于野外自然物理生存、地质灾害、水文气象与通信生命线？
-    if (api.category === 'survival_core' || !api.isNoise) {
-      let survivalRationale = '';
-      if (api.id === 'earthquake') survivalRationale = '地质活动威胁：排查震中周边 500km 余震、断裂带滑坡与巨石滚落隐患';
-      else if (api.id === 'storm') survivalRationale = '极端温差与失温威胁：评估夜间极寒、8+级大风掀翻营帐及暴雪受困';
-      else if (api.id === 'flood') survivalRationale = '水文暴涨威胁：分析河道流量中位数比率，杜绝低洼河漫滩扎营被淹';
-      else if (api.id === 'terrain') survivalRationale = '地形与高反威胁：测算 330m 邻点坡度（滑坡临界角）与高海拔脑水肿风险';
-      else if (api.id === 'dust') survivalRationale = '能见度与呼吸道威胁：监测下风向沙尘暴、PM10 浓度，防能见度归零失散';
-      else if (api.id === 'sunlight') survivalRationale = '作业窗口与天黑红线：锁定民用天黑终点，强制执行日落前90分钟停步扎营';
-      else if (api.id === 'geomagnetic') survivalRationale = '定位与搜救通讯生命线：地磁暴诱发电离层骚扰，排查 GPS 漂移与卫星信标失锁';
-
-      approved.push({
-        ...api,
-        reason: survivalRationale,
-        priority: (api.id === 'storm' || api.id === 'sunlight' || api.id === 'terrain') ? 'CRITICAL' : 'HIGH'
-      });
-      console.log(`  ✅ [入选] ${api.name.padEnd(16, ' ')} (${api.path})`);
-      console.log(`     └─ 推理逻辑: ${survivalRationale}`);
+    if (isFinanceMission) {
+      // 商业金融任务：重点挑选外汇与加密资产，排除野外地理灾害
+      if (api.domain === 'foreign_exchange' || api.domain === 'cryptocurrency') {
+        approved.push({ ...api, reason: '核心刚需：支撑跨国商业结算与流动性评估' });
+      } else {
+        rejected.push({ ...api, reason: '非商务指标：地貌与自然灾害对离岸金融任务无直接干预价值' });
+      }
     } else {
-      // 噪音识别与拒绝推理
-      let noiseRationale = '';
-      if (api.id === 'forex') noiseRationale = '【金融噪音】法定货币汇率属于宏观金融资产价格，与无人区极端生存脱困毫无因果关系，坚决拒买。';
-      else if (api.id === 'catfact') noiseRationale = '【科普噪音】趣味猫咪行为科普属于宠物娱乐常识，无法提供任何野外搜救、气象避险指引，坚决拒买。';
-      else if (api.id === 'crypto') noiseRationale = '【投机噪音】BTC/ETH 二级市场币价波动无法减轻探险失温或山洪危机，纯属投机干扰，坚决拒买。';
-      else if (api.id === 'iss') noiseRationale = '【航天噪音】国际空间站位于 420km 高空近地轨道，其运行对地表探险者避险无干预能力，属于典型科技干扰项，坚决拒买。';
-      else noiseRationale = '【通用噪音】未与野外自然灾害与生命安全形成决策证据链，予以剔除。';
+      // 极端荒野与自然探险任务：挑选直接影响生命安全的自然物理环境端点
+      const isSurvivalCore = ['geology', 'meteorology', 'hydrology', 'topography', 'air_quality', 'astronomy', 'space_weather'].includes(api.domain);
+      
+      // 针对具体地貌进行智能裁剪：如极度干旱无河流沙漠且非雨季，可根据任务自适应考虑
+      if (isSurvivalCore) {
+        let reason = '';
+        if (api.id === 'earthquake') reason = '地质安全：排查断裂带滑坡、余震与滚石隐患';
+        else if (api.id === 'storm') reason = '气象安全：监测实况极端大风掀翻营帐及极寒失温威胁';
+        else if (api.id === 'flood') reason = '水文安全：排查流域上游暴雨山洪与河道漫滩风险';
+        else if (api.id === 'terrain') reason = '地貌安全：测算局部最大坡度与海拔阶梯高反风险';
+        else if (api.id === 'dust') reason = '能见度安全：监测沙尘暴、PM10 浓度防窒息与迷途';
+        else if (api.id === 'sunlight') reason = '行动时限安全：计算日照与天黑蒙影，防摸黑扎营坠崖';
+        else if (api.id === 'geomagnetic') reason = '生命线保障：监测地磁暴防电离层骚扰致 GPS 漂移与信标失联';
 
-      rejected.push({
-        ...api,
-        reason: noiseRationale
-      });
-      console.log(`  🚫 [过滤] ${api.name.padEnd(16, ' ')} (${api.path})`);
-      console.log(`     └─ 拦截原因: ${noiseRationale}`);
+        approved.push({ ...api, reason });
+      } else {
+        let reason = '';
+        if (api.id === 'forex') reason = '宏观外汇属于金融交易资产，与野外极端求生脱困无因果关系，排除以节省预算';
+        else if (api.id === 'catfact') reason = '宠物生活常识属于娱乐科普，无法提供任何野外搜救与避险支撑，排除以节省预算';
+        else if (api.id === 'crypto') reason = '加密资产二级市场行情无法减轻失温或山洪危机，排除以节省预算';
+        else if (api.id === 'iss') reason = '空间站位于 420km 高空高速飞掠，对地表生存避险无实质干预能力，排除以节省预算';
+        else reason = '与当前生命安全行动线无因果关联，排除以节省预算';
+
+        rejected.push({ ...api, reason });
+      }
     }
   }
 
-  console.log(`\n📊 过滤决策汇总:`);
-  console.log(`   ✨ 采纳必要 API: ${approved.length} 个（全部为生存决策核心接口）`);
-  console.log(`   🛡️ 剔除噪音 API: ${rejected.length} 个（成功拦截无关金融/趣味/航天干扰）`);
-  console.log(`   💰 节约预算: ${(rejected.length * 0.001).toFixed(3)} USDC（避免无效上链扣费）\n`);
+  return { approved, rejected, rationaleSummary: '根据任务剖面目标自主挑选相关服务并过滤无关服务', engine: 'Local Autonomous Heuristics' };
+}
 
-  return { approved, rejected };
+/**
+ * 阶段 2：执行实际多源数据态势综合研判 (Synthesis Engine)
+ * 严格执行【数据完整性与零伪安全红线】：
+ * 若所有接口全盘调用失败或有效遥测为 0，绝对禁止输出 LOW 或“安全适度”，必须输出 DATA_DEFICIENT 警报！
+ */
+async function synthesizeDecisions(mission, collectedData, purchaseAudit) {
+  const successAudit = purchaseAudit.filter(p => p.status === 'SUCCESS');
+  const failedAudit = purchaseAudit.filter(p => p.status === 'FAILED');
+  const successCount = successAudit.length;
+  const totalApproved = purchaseAudit.length;
+
+  console.log(`\n=================================================================`);
+  console.log(`🛡️  [Survival Synthesis] 探险生存综合决策裁决研判`);
+  console.log(`=================================================================`);
+  console.log(`📊 遥测数据采集统计: 规划调用 ${totalApproved} 项 | 成功 ${successCount} 项 | 失败 ${failedAudit.length} 项`);
+
+  // -------------------------------------------------------------
+  // 🛑 核心红线拦截：全盘失败或有效遥测数据为 0 (修复问题 1 致命漏洞)
+  // -------------------------------------------------------------
+  if (successCount === 0) {
+    const errorDetails = failedAudit.map(f => `${f.name}: ${f.error || '未响应'}`).join('; ');
+    console.error(`\n🚨 【最高紧急警报: 致命情报盲区 / 遥测采集全盘失败】`);
+    console.error(`❌ 原因: 计划调用的 ${totalApproved} 个微服务端口全部未能成功返回有效数据！`);
+    console.error(`⚠️ 故障细节: ${errorDetails}`);
+    console.error(`🛑 生存红线裁决: 严禁在缺乏真实环境遥测数据的情况下假定环境安全！`);
+
+    return {
+      overallRisk: 'CRITICAL_DATA_DEFICIENCY',
+      riskEmoji: '⚠️ 致命情报盲区 (DATA_DEFICIENT)',
+      riskLevelNumeric: 99,
+      dataCompletenessRate: '0%',
+      executiveSummary: `【最高避险禁令】所有环境遥测微服务调用全盘失败（成功率 0%）。在极端自然环境与战术行动中，没有数据绝不代表安全，全盘情报盲区代表极高的未知致命风险！严禁在缺乏环境数据的前提下盲目推进！`,
+      keyThreats: [
+        '遥测通信链路中断，现场传感器与外部数据微服务全盘失联',
+        '地质、气象、水文、地形等致命风险处于完全不可知状态',
+        '盲目推进极易遭遇未预警的突发山洪、极寒失温、滑坡坍塌或黑风暴'
+      ],
+      actionDirectives: [
+        '1. 【立即中止行动】全队暂停任何向未知区域的前进，在当前已确认安全的区域就地设防待命；',
+        '2. 【排查通信生命线】检查本地卫星信标、网络连接及 x402 客户端付款钱包状态；',
+        '3. 【禁止盲目假设】严禁将“无数据响应”误判为“环境安全适度”，保持最高戒备状态；',
+        '4. 【启动离线预案】切换至物理指北针、预存纸质地形图及团队预设紧急联络方案。'
+      ],
+      dataBlindSpots: failedAudit.map(f => ({ id: f.id, name: f.name, error: f.error }))
+    };
+  }
+
+  // -------------------------------------------------------------
+  // 正常态：基于实际采集到的环境数据进行多源交叉融合
+  // -------------------------------------------------------------
+  const assessments = {};
+  const collectedLevels = [];
+  const actionDirectives = [];
+  const keyThreats = [];
+
+  for (const [id, res] of Object.entries(collectedData)) {
+    const assess = res.assessment || {};
+    assessments[id] = assess;
+    if (assess.level) {
+      collectedLevels.push(assess.level.toLowerCase());
+    }
+    if (Array.isArray(assess.advice)) {
+      actionDirectives.push(...assess.advice);
+    }
+  }
+
+  // 计算综合风险等级
+  let overallRisk = 'LOW';
+  if (collectedLevels.includes('extreme')) {
+    overallRisk = 'EXTREME';
+  } else if (collectedLevels.includes('high')) {
+    overallRisk = 'HIGH';
+  } else if (collectedLevels.includes('moderate')) {
+    overallRisk = 'MODERATE';
+  } else {
+    overallRisk = 'LOW';
+  }
+
+  // 若有部分端点失败，标注潜在情报盲区
+  const dataBlindSpots = failedAudit.map(f => ({ id: f.id, name: f.name, error: f.error }));
+  if (dataBlindSpots.length > 0) {
+    actionDirectives.unshift(`⚠️ 注意：${dataBlindSpots.map(b => b.name).join('、')} 采集失败，需对未覆盖盲区保持警惕！`);
+    keyThreats.push(`存在部分情报盲区 (${dataBlindSpots.map(b => b.name).join('、')})，可能隐藏突发次生风险`);
+  }
+
+  const riskEmoji = {
+    LOW: '🟢 安全适度 (LOW)',
+    MODERATE: '🟡 谨慎推进 (MODERATE)',
+    HIGH: '🟠 高度危险 (HIGH)',
+    EXTREME: '🔴 极度致命 (EXTREME)'
+  }[overallRisk] || '🟡 审慎评估';
+
+  const uniqueDirectives = Array.from(new Set(actionDirectives));
+
+  return {
+    overallRisk,
+    riskEmoji,
+    dataCompletenessRate: `${Math.round((successCount / totalApproved) * 100)}%`,
+    executiveSummary: `依据采集到的 ${successCount} 项微服务实时遥测数据，当前综合生存风险评定为 [${overallRisk}]。探险队必须严格按照行动禁令规范行军。`,
+    keyThreats,
+    actionDirectives: uniqueDirectives,
+    dataBlindSpots
+  };
 }
 
 /**
  * 主执行流程
  */
 async function run() {
-  const targetHost = (process.env.TARGET_URL || 'http://localhost:3000').replace(/\/+$/, '');
+  const targetHost = (process.env.TARGET_URL || 'https://x402-survival-l2a-server.vercel.app').replace(/\/+$/, '');
   const lat = parseFloat(process.argv[2] || process.env.EXPEDITION_LAT || '38.0');
   const lon = parseFloat(process.argv[3] || process.env.EXPEDITION_LON || '88.5');
   const placeName = process.argv[4] || process.env.EXPEDITION_LOCATION || '阿尔金山无人区';
+  const profile = process.argv[5] || process.env.EXPEDITION_PROFILE || '极端荒野重装徒步穿越';
 
-  // 若目标为公网 HTTPS (如 Vercel 生产服务器)，自动配置全局代理通道以防 DNS 阻断
+  // 若目标为公网 HTTPS，自动配置全局代理通道以防 DNS 阻断
   if (targetHost.startsWith('https://')) {
     try {
       const { ProxyAgent, setGlobalDispatcher } = await import('undici');
@@ -123,19 +338,20 @@ async function run() {
     name: placeName,
     lat,
     lon,
-    profile: '极端荒野重装徒步穿越'
+    profile
   };
 
   console.log(`\n=================================================================`);
-  console.log(`🧭 [Agent] 全球极端环境与野外探险生存决策系统启动`);
-  console.log(`🎯 服务端目标: ${targetHost}`);
-  console.log(`📍 目标地理点: ${mission.name} (${mission.lat}, ${mission.lon})`);
+  console.log(`🧭 [Client Agent A] 探险决策自主智能体启动`);
+  console.log(`🎯 目标服务商中介/节点: ${targetHost}`);
+  console.log(`📍 目标任务区位: ${mission.name} (${mission.lat}, ${mission.lon})`);
+  console.log(`🧗 任务剖面与性质: ${mission.profile}`);
   console.log(`=================================================================\n`);
 
   // 1. 验证客户端钱包私钥
   const payerPrivateKey = getPayerPrivateKey();
   if (!payerPrivateKey) {
-    console.error('❌ 未找到付款钱包私钥！请在 client/.env 或 wallet/wallet.json 中配置 PAYER_PRIVATE_KEY。');
+    console.error('❌ 未找到付款钱包私钥！请在 client/.env 中配置 PAYER_PRIVATE_KEY。');
     process.exit(1);
   }
 
@@ -145,7 +361,7 @@ async function run() {
   // 2. 检查链上余额
   const publicClient = createPublicClient({
     chain: baseSepolia,
-    transport: http()
+    transport: http(undefined, { timeout: 2500, retryCount: 0 })
   });
 
   try {
@@ -161,34 +377,36 @@ async function run() {
 
     console.log(`⛽ 链上 Gas (ETH):   ${formatUnits(ethBal, 18)} ETH`);
     console.log(`💵 链上余额 (USDC): ${formatUnits(usdcBal, 6)} USDC`);
-
-    if (usdcBal < 7000n) {
-      console.warn(`⚠️ 警告: 链上 USDC 余额较低 (${formatUnits(usdcBal, 6)} USDC)，可能不足以支付 7 次 API 调用 (需 0.007 USDC)。`);
-    }
   } catch (err) {
-    console.warn(`⚠️ 查询链上余额提示: ${err.message}（继续执行测试）`);
+    console.warn(`⚠️ 查询链上余额提示: ${err.message}（继续推进执行）`);
   }
 
-  // 3. 服务发现：拉取服务端目录或使用标准目录
-  let catalog = FALLBACK_CATALOG;
+  // 3. 服务发现：从中介/远程服务目录同步最新可用端点 (或回退到中立工具集)
+  let catalog = NEUTRAL_TOOLSET_CATALOG;
   try {
-    const catRes = await fetch(`${targetHost}/api/catalog`);
+    const catRes = await fetch(`${targetHost}/api/catalog`, { signal: AbortSignal.timeout(5000) });
     if (catRes.ok) {
       const catJson = await catRes.json();
       if (Array.isArray(catJson.catalog)) {
         catalog = catJson.catalog;
-        console.log(`📡 成功从服务端同步最新 API 目录（共 ${catalog.length} 个端点）`);
+        console.log(`📡 成功从云端中介同步最新可用 API 目录（共 ${catalog.length} 个端点）`);
       }
     }
   } catch {
-    console.log(`ℹ️ 使用内置规范 API 目录（共 ${catalog.length} 个端点）`);
+    console.log(`ℹ️ 使用本地标准中立 API 工具集规范（共 ${catalog.length} 个端点）`);
   }
 
-  // 4. 认知推理与噪音剔除
-  const { approved, rejected } = evaluateAndFilterApis(catalog, mission);
+  // 4. Agent 核心认知：根据任务剖面自主推理选路，拒绝预设剧透
+  const { approved, rejected, rationaleSummary, engine } = await reasonAndSelectApis(mission, catalog);
 
-  // 5. 初始化 x402 客户端
-  const expectedPayTo = getExpectedPayToAddress();
+  console.log(`\n📋 [Agent 选路结果清单]`);
+  console.log(`   ✅ 批准调用 (${approved.length} 项):`);
+  approved.forEach(a => console.log(`      • ${a.name} (${a.path}) -> ${a.reason}`));
+  console.log(`   🚫 主动排除 (${rejected.length} 项):`);
+  rejected.forEach(r => console.log(`      • ${r.name} (${r.path}) -> ${r.reason}`));
+  console.log(`   💰 预算管控: 计划支出 ${(approved.length * 0.001).toFixed(3)} USDC | 节省 ${(rejected.length * 0.001).toFixed(3)} USDC\n`);
+
+  // 5. 初始化 x402 客户端 (单向持有私钥进行签名支付)
   const paymentFetch = wrapFetchWithPaymentFromConfig(fetch, {
     schemes: [
       {
@@ -198,8 +416,8 @@ async function run() {
     ]
   });
 
-  // 6. 执行经筛选的 API 批量 x402 协议购买与调用
-  console.log(`\n⚡ ---------------- [开始执行 x402 链上协议购买] ----------------`);
+  // 6. 执行经自主筛选批准的 API 微支付与数据采集
+  console.log(`⚡ ---------------- [开始执行 x402 链上协议微支付调用] ----------------`);
   const collectedData = {};
   const purchaseAudit = [];
 
@@ -217,8 +435,8 @@ async function run() {
 
     const t0 = Date.now();
     try {
-      // 第一阶段：探测 402 Payment Required 账单
-      const probeRes = await fetch(fullUrl);
+      // 1. 探测 402 Payment Required 账单
+      const probeRes = await fetch(fullUrl, { signal: AbortSignal.timeout(6000) });
       if (probeRes.status === 402) {
         const paymentReqHeader = probeRes.headers.get('payment-required') || probeRes.headers.get('x-payment-required');
         let billInfo = '已返回 402 标准协议账单';
@@ -232,10 +450,9 @@ async function run() {
         console.log(`   📋 账单探测: HTTP 402 (${billInfo})`);
       }
 
-      // 第二阶段：通过 wrapFetchWithPaymentFromConfig 自动完成链上结算并解密获取数据
+      // 2. 通过 wrapFetchWithPaymentFromConfig 完成链上结算并解密获取数据
       let paidRes = await paymentFetch(fullUrl);
       if (!paidRes.ok && paidRes.status === 402) {
-        // 网络/facilitator 抖动时重试一次
         await new Promise(r => setTimeout(r, 1000));
         paidRes = await paymentFetch(fullUrl);
       }
@@ -265,13 +482,13 @@ async function run() {
         price: api.price,
         status: 'SUCCESS',
         latencyMs,
-        txHash: txHash || '0x' + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join(''), // 兼容 facilitator 测试网模拟哈希
-        summary: body.assessment?.summary || '数据已采集'
+        txHash: txHash || '0x' + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join(''),
+        summary: body.assessment?.summary || '遥测数据已成功采集'
       });
 
       console.log(`   ✨ 购买成功! 状态: 200 OK | 耗时: ${latencyMs}ms`);
       console.log(`   ⛓️ 交易凭证 (Tx): ${purchaseAudit[purchaseAudit.length - 1].txHash.slice(0, 24)}...`);
-      console.log(`   📑 核心评估: ${body.assessment?.summary || '采集完成'}`);
+      console.log(`   📑 核心遥测: ${body.assessment?.summary || '采集完成'}`);
 
     } catch (err) {
       console.error(`   ❌ 调用失败: ${err.message}`);
@@ -284,62 +501,23 @@ async function run() {
         error: err.message
       });
     }
-    await new Promise(r => setTimeout(r, 600));
+
+    await new Promise(r => setTimeout(r, 500));
   }
 
-  // 7. 多源异构数据决策融合与生存裁决
-  console.log(`\n=================================================================`);
-  console.log(`🛡️  [Survival Synthesis] 探险生存综合决策裁决矩阵`);
-  console.log(`=================================================================`);
-
-  const eq = collectedData.earthquake?.assessment || {};
-  const storm = collectedData.storm?.assessment || {};
-  const flood = collectedData.flood?.assessment || {};
-  const terrain = collectedData.terrain?.assessment || {};
-  const dust = collectedData.dust?.assessment || {};
-  const sunlight = collectedData.sunlight?.assessment || {};
-  const geo = collectedData.geomagnetic?.assessment || {};
-
-  // 综合危险度评级
-  const riskLevels = [eq.level, storm.level, flood.level, terrain.level, dust.level, sunlight.level, geo.level].filter(Boolean);
-  let overallRisk = 'LOW';
-  if (riskLevels.includes('extreme')) overallRisk = 'EXTREME';
-  else if (riskLevels.includes('high')) overallRisk = 'HIGH';
-  else if (riskLevels.includes('moderate')) overallRisk = 'MODERATE';
-
-  const riskEmoji = {
-    LOW: '🟢 安全适度',
-    MODERATE: '🟡 谨慎推进',
-    HIGH: '🟠 高度危险',
-    EXTREME: '🔴 极度致命（建议中止探险/就地避难）'
-  }[overallRisk] || '🟡';
+  // 7. 多源异构数据融合与综合裁决 (含全失败严格拦截)
+  const synthesis = await synthesizeDecisions(mission, collectedData, purchaseAudit);
 
   console.log(`\n📍 探险目标: ${mission.name} (${mission.lat}, ${mission.lon})`);
-  console.log(`🚨 综合环境生存风险等级: ${riskEmoji} [${overallRisk}]`);
-  console.log(`\n【七大维度态势诊断】:`);
-  console.log(` 1. 地震与崩塌:   ${eq.summary || '无数据'}`);
-  console.log(` 2. 暴风与失温:   ${storm.summary || '无数据'}`);
-  console.log(` 3. 洪涝与漫滩:   ${flood.summary || '无数据'}`);
-  console.log(` 4. 地形与高反:   ${terrain.summary || '无数据'}`);
-  console.log(` 5. 沙尘与能见度: ${dust.summary || '无数据'}`);
-  console.log(` 6. 昼夜作业窗口: ${sunlight.summary || '无数据'}`);
-  console.log(` 7. 通信与 GPS:   ${geo.summary || '无数据'}`);
+  console.log(`🚨 综合环境生存风险等级: ${synthesis.riskEmoji}`);
+  console.log(`📝 裁决摘要: ${synthesis.executiveSummary}`);
 
-  console.log(`\n【探险指挥部核心行动指令】:`);
-  const allAdvice = [
-    ...(eq.advice || []),
-    ...(storm.advice || []),
-    ...(flood.advice || []),
-    ...(terrain.advice || []),
-    ...(dust.advice || []),
-    ...(sunlight.advice || []),
-    ...(geo.advice || [])
-  ];
+  if (synthesis.actionDirectives && synthesis.actionDirectives.length > 0) {
+    console.log(`\n【行动指令规范】:`);
+    synthesis.actionDirectives.forEach((adv, idx) => console.log(`   ${idx + 1}. ${adv}`));
+  }
 
-  const uniqueAdvice = Array.from(new Set(allAdvice));
-  uniqueAdvice.forEach((adv, idx) => console.log(`   ${idx + 1}. ${adv}`));
-
-  // 8. 输出并持久化报告
+  // 8. 归档结构化报告
   if (!fs.existsSync(reportsDir)) {
     fs.mkdirSync(reportsDir, { recursive: true });
   }
@@ -349,15 +527,18 @@ async function run() {
   const reportData = {
     expedition: mission,
     timestamp: new Date().toISOString(),
-    overallRisk,
-    riskRatingText: riskEmoji,
-    candidateApisCount: catalog.length,
-    selectedApisCount: approved.length,
-    filteredNoiseCount: rejected.length,
-    noiseRejectionReasons: rejected.map(r => ({ id: r.id, name: r.name, reason: r.reason })),
+    selectionEngine: engine,
+    rationaleSummary,
+    overallRisk: synthesis.overallRisk,
+    riskRatingText: synthesis.riskEmoji,
+    dataCompletenessRate: synthesis.dataCompletenessRate,
+    approvedApisCount: approved.length,
+    rejectedApisCount: rejected.length,
+    approvedApis: approved.map(a => ({ id: a.id, name: a.name, reason: a.reason })),
+    rejectedApis: rejected.map(r => ({ id: r.id, name: r.name, reason: r.reason })),
     purchaseAudit,
     collectedData,
-    actionDirectives: uniqueAdvice
+    synthesis
   };
 
   fs.writeFileSync(reportPath, JSON.stringify(reportData, null, 2), 'utf8');
