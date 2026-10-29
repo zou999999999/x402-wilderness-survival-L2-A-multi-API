@@ -60,7 +60,7 @@ async function loadSkillSpec(targetHost) {
   if (targetHost) {
     try {
       const res = await fetch(`${targetHost}/api/skill`, {
-        signal: AbortSignal.timeout(4000)
+        signal: AbortSignal.timeout(30000)
       });
       if (res.ok) {
         const text = await res.text();
@@ -269,7 +269,7 @@ async function run() {
   // 3. 服务发现：同步云端微服务目录
   let catalog = NEUTRAL_TOOLSET_CATALOG;
   try {
-    const catRes = await fetch(`${targetHost}/api/catalog`, { signal: AbortSignal.timeout(6000) });
+    const catRes = await fetch(`${targetHost}/api/catalog`, { signal: AbortSignal.timeout(30000) });
     if (catRes.ok) {
       const catJson = await catRes.json();
       if (Array.isArray(catJson.catalog)) {
@@ -320,7 +320,7 @@ async function run() {
     const t0 = Date.now();
     try {
       // 1. 发起探测请求
-      const probeRes = await fetch(fullUrl, { signal: AbortSignal.timeout(8000) });
+      const probeRes = await fetch(fullUrl, { signal: AbortSignal.timeout(35000) });
       if (probeRes.status === 402) {
         const paymentReqHeader = probeRes.headers.get('payment-required') || probeRes.headers.get('x-payment-required');
         let billInfo = 'HTTP 402 Payment Required';
