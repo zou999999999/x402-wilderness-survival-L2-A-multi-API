@@ -84,11 +84,6 @@ async function startLocalServer(openWindow = false) {
 }
 
 async function main() {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout
-  });
-
   const target = process.env.TARGET_URL || 'http://localhost:3000';
   const alive = await isServerAlive(target);
   const statusBadge = alive ? '🟢 运行中' : '⚪ 待启动 (执行时自动就绪)';
@@ -108,6 +103,11 @@ async function main() {
   console.log('  [8] 运行链上对账与审计 (自动核对最新链上交易状态与钱包余额)');
   console.log('  [9] 重新生成 Word (.docx) 报告 (从最新 JSON 重新排版导出 Word)');
   console.log('  [0] 独立启动本地微服务服务端 (在独立窗口中监听 3000 端口并实时显示网络日志)\n');
+
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
 
   let choice = await askQuestion(rl, '请输入选项编号 [直接回车默认 1]: ');
   if (!choice) choice = '1';
