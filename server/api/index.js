@@ -1,6 +1,13 @@
 import 'dotenv/config';
 import dns from 'node:dns';
 dns.setDefaultResultOrder('ipv4first');
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const SKILL_FILE = path.resolve(__dirname, '../src/config/SKILL.md');
 
 import express from 'express';
 import { x402ResourceServer, HTTPFacilitatorClient } from '@x402/core/server';
@@ -66,8 +73,20 @@ app.get('/api/catalog', (_req, res) => {
   });
 });
 
+// 公开技能规范端点 (Agent-Readable Skill Marketplace Endpoint)
+app.get(['/api/skill', '/skill', '/SKILL.md', '/skill.md'], (_req, res) => {
+  try {
+    if (fs.existsSync(SKILL_FILE)) {
+      const content = fs.readFileSync(SKILL_FILE, 'utf8');
+      res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+      return res.send(content);
+    }
+  } catch {}
+  res.status(404).send('# 技能规范未就绪\n请通过 /api/catalog 获取结构化目录。');
+});
+
 app.get('/', (_req, res) => {
-  res.send('🌐 x402 Extreme Survival Recon Service is running! Visit /health or /api/catalog.');
+  res.send('🌐 x402 Extreme Survival Recon Service is running! Visit /health, /api/catalog or /api/skill.');
 });
 
 // 构建 11 个 API 的 x402 付费规格路由表（每个 $0.001 USDC）

@@ -85,12 +85,15 @@ async function startLocalServer(openWindow = false) {
 
 async function main() {
   const target = process.env.TARGET_URL || 'http://localhost:3000';
+  const isCloud = !target.includes('localhost') && !target.includes('127.0.0.1');
   const alive = await isServerAlive(target);
-  const statusBadge = alive ? '🟢 运行中' : '⚪ 待启动 (执行时自动就绪)';
+  const statusBadge = isCloud
+    ? (alive ? '🌐 云端在线' : '⚠️ 云端未响应')
+    : (alive ? '🟢 本地运行中' : '⚪ 本地待启动 (执行时自动就绪)');
 
   console.log('======================================================================');
-  console.log('🤖 x402 Level 2-A: 全球极端环境与野外探险多源数据采购 Agent (全能一体化)');
-  console.log(`📡 本地微服务集市状态: ${statusBadge} | 端口: ${target}`);
+  console.log('🤖 x402 Level 2-A: 全球极端环境与野外探险多源数据采购 Agent (Skill Marketplace)');
+  console.log(`📡 集市服务状态: ${statusBadge} | 目标端点: ${target}`);
   console.log('======================================================================\n');
   console.log('请选择探险目标、全量购买、审计对账或启动服务端:');
   console.log('  [1] 阿尔金山无人区 (38.0, 88.5) - 高海拔荒漠戈壁徒步穿越 (默认)');

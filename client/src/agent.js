@@ -53,10 +53,27 @@ const NEUTRAL_TOOLSET_CATALOG = [
 ];
 
 /**
- * 读取本地中立 Skill 技能规范文档 (若存在)
+ * 动态拉取或加载客观中立 Skill 技能规范 (Agent-Readable Skill Marketplace)
+ * 优先从云端集市拉取最新公开规范 (GET /api/skill)；若网络离线，平滑回退至本地缓存
  */
-function loadLocalSkillSpec() {
+async function loadSkillSpec(targetHost) {
+  if (targetHost) {
+    try {
+      const res = await fetch(`${targetHost}/api/skill`, {
+        signal: AbortSignal.timeout(4000)
+      });
+      if (res.ok) {
+        const text = await res.text();
+        if (text && text.length > 50) {
+          console.log(`📡 [Skill Marketplace] 已成功从云端集市读取最新技能规范 (${targetHost}/api/skill)`);
+          return text;
+        }
+      }
+    } catch {}
+  }
+
   const candidatePaths = [
+    path.resolve(__dirname, '../../server/src/config/SKILL.md'),
     path.resolve(__dirname, '../../.agents/skills/x402-level2-survival-recon/SKILL.md'),
     path.resolve(__dirname, '../../../.agents/skills/x402-level2-survival-recon/SKILL.md')
   ];
@@ -74,7 +91,7 @@ function loadLocalSkillSpec() {
  * Agent 认知推理与按需选路阶段
  * 若未配置 API Key 或用户指定全量模式，则直接购买全部 11 个 API
  */
-async function selectApis(mission, catalog, forceAll = false) {
+async function selectApis(mission, catalog, targetHost, forceAll = false) {
   if (forceAll) {
     console.log(`\n📦 【全量采购模式】用户指定购买全部可用微服务 API (共 ${catalog.length} 项)`);
     return {
@@ -92,7 +109,7 @@ async function selectApis(mission, catalog, forceAll = false) {
   // 1. 若配置了大模型 API Key，驱动 Agent 进行任务驱动的自主意图理解与按需选路
   if (apiKey) {
     console.log(`\n🤖 正在调用智能体 (${model}) 结合 Skill 规范，根据任务剖面自主评估选路...`);
-    const skillSpec = loadLocalSkillSpec() || JSON.stringify(catalog, null, 2);
+    const skillSpec = await loadSkillSpec(targetHost) || JSON.stringify(catalog, null, 2);
 
     const systemPrompt = `你是一个具备高度自主选路决策能力的行动智能体 (Recon Agent)。
 你当前受命准备执行以下具体任务：
@@ -265,7 +282,7 @@ async function run() {
   }
 
   // 4. 选路评估（Agent 自主评估 或 全量采购）
-  const { approved, rejected, engine, rationaleSummary } = await selectApis(mission, catalog, isForceAll);
+  const { approved, rejected, engine, rationaleSummary } = await selectApis(mission, catalog, targetHost, isForceAll);
 
   console.log(`📋 采购计划: 准备真实购买 ${approved.length} 项微服务 | 预估总额: ${(approved.length * 0.001).toFixed(3)} USDC`);
   approved.forEach((a, i) => console.log(`   [${i + 1}] ${a.name} (${a.path})`));
