@@ -11,21 +11,28 @@ export class HttpError extends Error {
   }
 }
 
-export async function fetchJson(url, { timeoutMs = 15000 } = {}) {
+export async function fetchJson(url, { timeoutMs = 18000, retries = 1 } = {}) {
   const host = new URL(url).host;
-  let res;
-  try {
-    res = await fetch(url, {
-      headers: { 'User-Agent': UA, Accept: 'application/json' },
-      signal: AbortSignal.timeout(timeoutMs)
-    });
-  } catch (err) {
-    throw new HttpError(`上游 ${host} 无法连接: ${err.message}`, 504);
+  let lastErr;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(url, {
+        headers: { 'User-Agent': UA, Accept: 'application/json' },
+        signal: AbortSignal.timeout(timeoutMs)
+      });
+      if (!res.ok) {
+        throw new HttpError(`上游 ${host} 返回 HTTP ${res.status}`, 502);
+      }
+      return await res.json();
+    } catch (err) {
+      lastErr = err;
+      if (attempt < retries) {
+        await new Promise(r => setTimeout(r, 600));
+        continue;
+      }
+    }
   }
-  if (!res.ok) {
-    throw new HttpError(`上游 ${host} 返回 HTTP ${res.status}`, 502);
-  }
-  return res.json();
+  throw new HttpError(`上游 ${host} 无法连接: ${lastErr?.message}`, 504);
 }
 
 /** 海伦公式计算两点球面距离（km） */
