@@ -184,7 +184,7 @@ ${skillSpec}
  * 主执行入口
  */
 async function run() {
-  const targetHost = (process.env.TARGET_URL || 'https://x402-survival-l2a-server.vercel.app').replace(/\/+$/, '');
+  const targetHost = (process.env.TARGET_URL || 'http://localhost:3000').replace(/\/+$/, '');
   
   // 终端命令行参数解析
   const lat = parseFloat(process.argv[2] || process.env.EXPEDITION_LAT || '38.0');

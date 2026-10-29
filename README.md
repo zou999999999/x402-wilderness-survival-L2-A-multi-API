@@ -40,8 +40,10 @@ Level 2-A/
 │       └── reconcile.js             # 链上 USDC 交易哈希与余额自动化审计工具
 │
 ├── .agents/skills/                  # Level 2 官方客观中立微服务规范 (SKILL.md)
+├── 启动服务端.bat                   # Windows 独立启动本地微服务数据集市 (PORT: 3000)
+├── 启动服务端.sh                    # macOS / Linux 独立启动本地微服务数据集市 (PORT: 3000)
 ├── 运行探险决策Agent.bat            # Windows 一体化控制台 (采购/选路/对账/导出Word)
-├── 运行探险决策Agent.sh             # macOS / Linux 一体化控制台 (涵盖全部9大功能)
+├── 运行探险决策Agent.sh             # macOS / Linux 一体化控制台 (涵盖全部交互功能)
 └── 项目交接与全流程上下文总结.md    # 核心交接档案
 ```
 
@@ -83,7 +85,7 @@ Level 2-A/
 - `[7]` 直接全量采购模式 (直接购买全部 11 项微服务)
 - `[8]` 运行链上对账与审计 (自动核对最新链上交易状态与钱包余额)
 - `[9]` 重新生成 Word (.docx) 报告 (从最新 JSON 重新排版导出 Word)
-
+- `[0]` 查看/启动本地服务端 (健康状态检查与服务拉起)
 
 或在终端中直接运行：
 ```bash
@@ -98,20 +100,20 @@ node src/agent.js 38.0 88.5 "阿尔金山无人区" "极端荒野重装徒步穿
 2. **`.json` 审计数据**：包含付款方、真实 Tx Hash、原始 HTTP 响应报文与时间戳。
 
 ### 3. 执行链上对账核验
-在 `运行探险决策Agent.bat` 中选择 `[8]` 或在终端执行：
+在控制台中选择 `[8]` 或在终端执行：
 ```bash
 cd client
 node src/reconcile.js
 ```
 脚本将自动读取最新交付报告，向 Base Sepolia 逐笔发起链上核查，输出真实的交易状态、区块高度、Gas 代付详情与双方 USDC 余额。
 
-
 ---
 
-## 四、 🌐 官方在线云端服务 (Vercel Live Endpoints)
+## 四、 💻 本地微服务数据集市与服务端说明
 
-本项目微服务市场已部署上线至 Vercel，全球客户端可直接跨网调用：
+本项目已全面回归纯本地物理闭环，免除任何云端外部依赖：
 
-- 🚀 **生产基准地址**：`https://x402-survival-l2a-server.vercel.app`
-- 💚 **在线健康检查**：[`https://x402-survival-l2a-server.vercel.app/health`](https://x402-survival-l2a-server.vercel.app/health)
-- 📋 **全量 API 在线目录与定价**：[`https://x402-survival-l2a-server.vercel.app/api/catalog`](https://x402-survival-l2a-server.vercel.app/api/catalog)
+- 🚀 **本地运行基准地址**：`http://localhost:3000`
+- 💚 **本地健康检查**：`http://localhost:3000/health`
+- 📋 **全量 API 目录与定价**：`http://localhost:3000/api/catalog`
+- 启动服务端方式：双击 `启动服务端.bat`（或在控制台输入 `[0]` / 执行 `./启动服务端.sh`）即可。
