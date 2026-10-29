@@ -40,10 +40,8 @@ Level 2-A/
 │       └── reconcile.js             # 链上 USDC 交易哈希与余额自动化审计工具
 │
 ├── .agents/skills/                  # Level 2 官方客观中立微服务规范 (SKILL.md)
-├── 启动服务端.bat                   # Windows 独立启动本地微服务数据集市 (PORT: 3000)
-├── 启动服务端.sh                    # macOS / Linux 独立启动本地微服务数据集市 (PORT: 3000)
-├── 运行探险决策Agent.bat            # Windows 一体化控制台 (采购/选路/对账/导出Word)
-├── 运行探险决策Agent.sh             # macOS / Linux 一体化控制台 (涵盖全部交互功能)
+├── 运行探险决策Agent.bat            # Windows 唯一一体化全能控制台 (全自动拉起服务端/采购/选路/对账/导出Word)
+├── 运行探险决策Agent.sh             # macOS / Linux 唯一一体化全能控制台 (全自动拉起服务端/全功能交互)
 └── 项目交接与全流程上下文总结.md    # 核心交接档案
 ```
 
@@ -116,4 +114,4 @@ node src/reconcile.js
 - 🚀 **本地运行基准地址**：`http://localhost:3000`
 - 💚 **本地健康检查**：`http://localhost:3000/health`
 - 📋 **全量 API 目录与定价**：`http://localhost:3000/api/catalog`
-- 启动服务端方式：双击 `启动服务端.bat`（或在控制台输入 `[0]` / 执行 `./启动服务端.sh`）即可。
+- **全自动联动**：`运行探险决策Agent.bat` 已完全内置服务端智能探测与秒级自启机制，用户无需单独启动服务端，真正实现**双击单一主脚本即可跑通全部功能**！在菜单中输入 `[0]` 亦可随时独立呼出服务端专用监控窗口。
