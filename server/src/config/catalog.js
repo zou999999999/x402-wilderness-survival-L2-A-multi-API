@@ -81,7 +81,7 @@ export const API_CATALOG = [
   },
   {
     id: 'forex',
-    path: '/api/noise/forex',
+    path: '/api/market/forex',
     name: '国际外汇法定货币汇率牌价',
     category: 'foreign_exchange',
     price: PRICE_USDC,
@@ -91,7 +91,7 @@ export const API_CATALOG = [
   },
   {
     id: 'catfact',
-    path: '/api/noise/catfact',
+    path: '/api/info/catfact',
     name: '猫科动物科普与生物事实',
     category: 'feline_zoology',
     price: PRICE_USDC,
@@ -101,7 +101,7 @@ export const API_CATALOG = [
   },
   {
     id: 'crypto',
-    path: '/api/noise/crypto',
+    path: '/api/market/crypto',
     name: '加密数字货币现货行情走势',
     category: 'cryptocurrency',
     price: PRICE_USDC,
@@ -111,7 +111,7 @@ export const API_CATALOG = [
   },
   {
     id: 'iss',
-    path: '/api/noise/iss',
+    path: '/api/orbit/iss',
     name: '国际空间站轨道天顶轨迹监测',
     category: 'orbital_space',
     price: PRICE_USDC,
@@ -123,6 +123,7 @@ export const API_CATALOG = [
 
 /**
  * 构造用于 x402 paymentMiddleware 的 routesConfig 字典
+ * 同时注册规范路径与历史别名路径，确保 100% 兼容
  */
 export function buildX402RoutesConfig() {
   const payTo = getPayToAddress();
@@ -140,5 +141,19 @@ export function buildX402RoutesConfig() {
     };
   }
 
+  // 注册历史别名路由兼容
+  const aliasMap = {
+    '/api/noise/forex': '/api/market/forex',
+    '/api/noise/catfact': '/api/info/catfact',
+    '/api/noise/crypto': '/api/market/crypto',
+    '/api/noise/iss': '/api/orbit/iss'
+  };
+  for (const [legacyPath, standardPath] of Object.entries(aliasMap)) {
+    if (routesConfig[standardPath]) {
+      routesConfig[legacyPath] = routesConfig[standardPath];
+    }
+  }
+
   return routesConfig;
 }
+

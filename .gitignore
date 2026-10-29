@@ -12,6 +12,7 @@ secrets/wallet.json
 
 # 运行报告与测试生成物 (本地留存，不入版本控制)
 client/reports/*.json
+client/reports/*.docx
 reports/
 logs/
 *.log

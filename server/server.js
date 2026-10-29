@@ -12,7 +12,7 @@ const server = app.listen(PORT, () => {
   console.log(`💚 健康检查: http://localhost:${PORT}/health`);
   console.log(`📋 服务目录: http://localhost:${PORT}/api/catalog`);
   console.log(`💰 收款地址: ${getPayToAddress()}`);
-  console.log(`🧩 总挂载接口: ${API_CATALOG.length} 个（核心生存 7 个 + 噪音干扰 4 个）`);
+  console.log(`🧩 总挂载接口: ${API_CATALOG.length} 个外部数据微服务`);
   console.log(`=================================================================`);
 });
 
