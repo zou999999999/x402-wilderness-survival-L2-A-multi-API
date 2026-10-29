@@ -162,10 +162,19 @@ async function main() {
         let customProfile = await askQuestion(rl, '请输入探险性质 (例如: 沙漠越野重装穿越): ');
         if (!customProfile) customProfile = '综合野外重装探险';
 
+        let customApis = await askQuestion(rl, '请输入指定采购的 API 列表 (逗号分隔，如 earthquake,storm,terrain；直接回车则由 SKILL 规范自动匹配): ');
+
         rl.close();
-        console.log(`\n📍 已设定任务参数 -> 目标地: <${customName}> | 经度: <${customLon}> | 纬度: <${customLat}> | 任务性质: <${customProfile}>\n`);
-        await startLocalServer(false);
-        await runSubprocess('agent.js', [customLat, customLon, customName, customProfile, 'auto']);
+        console.log(`\n📍 已设定任务参数 -> 目标地: <${customName}> | 经度: <${customLon}> | 纬度: <${customLat}> | 任务性质: <${customProfile}>`);
+        if (customApis) {
+          console.log(`🎯 指定采购端点: ${customApis}\n`);
+          await startLocalServer(false);
+          await runSubprocess('agent.js', [customLat, customLon, customName, customProfile, 'custom', customApis]);
+        } else {
+          console.log(`📜 由 SKILL.md 技能规范根据任务剖面按需匹配\n`);
+          await startLocalServer(false);
+          await runSubprocess('agent.js', [customLat, customLon, customName, customProfile, 'auto']);
+        }
         break;
       }
       case '7':

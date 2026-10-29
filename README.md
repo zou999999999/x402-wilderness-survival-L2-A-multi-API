@@ -88,8 +88,15 @@ Level 2-A/
 或在终端中直接运行：
 ```bash
 cd client
-# 格式: node src/agent.js <纬度> <经度> <地名> <任务描述> [模式: auto|all]
+# 格式: node src/agent.js <纬度> <经度> <地名> <任务描述> [模式: auto|all|custom] [指定API清单: earthquake,storm,...]
+# 示例 1 (技能规范客观匹配):
 node src/agent.js 38.0 88.5 "阿尔金山无人区" "极端荒野重装徒步穿越" auto
+
+# 示例 2 (外部自主 Agent 指定采购):
+node src/agent.js 38.0 88.5 "阿尔金山无人区" "极端荒野重装徒步穿越" custom earthquake,storm,terrain
+
+# 示例 3 (全量采购模式):
+node src/agent.js 38.0 88.5 "阿尔金山无人区" "极端荒野重装徒步穿越" all
 ```
 
 ### 2. 成果交付物

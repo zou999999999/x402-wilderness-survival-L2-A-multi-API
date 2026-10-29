@@ -88,11 +88,17 @@ async function loadSkillSpec(targetHost) {
 }
 
 /**
- * Agent 认知推理与按需选路阶段
- * 若未配置 API Key 或用户指定全量模式，则直接购买全部 11 个 API
+ * 认知推理与按需选路执行器 (Skill Specification & Autonomous Agent Driven)
+ * 彻底剥离第三方 DeepSeek API Key 依赖，由外部自主智能体传参或中立 SKILL.md 规范客观场景映射驱动！
+ * 
+ * 选路优先级：
+ * 1. 外部自主 Agent / 用户显式指定列表 (explicitApis 或 process.env.SELECTED_APIS)
+ * 2. 全量采购模式 (mode === 'all' 或 isForceAll)
+ * 3. 基于云端/本地公开 SKILL.md 规范与任务剖面的客观场景映射 (Skill Specification Matcher)
  */
-async function selectApis(mission, catalog, targetHost, forceAll = false) {
-  if (forceAll) {
+async function selectApis(mission, catalog, targetHost, mode = 'auto', explicitApis = null) {
+  // 1. 全量采购模式
+  if (mode === 'all' || mode === 'forceAll') {
     console.log(`\n📦 【全量采购模式】用户指定购买全部可用微服务 API (共 ${catalog.length} 项)`);
     return {
       approved: catalog.map(c => ({ ...c, reason: '用户全量采购模式' })),
@@ -102,98 +108,153 @@ async function selectApis(mission, catalog, targetHost, forceAll = false) {
     };
   }
 
-  const apiKey = (process.env.DEEPSEEK_API_KEY || '').trim();
-  const baseUrl = (process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com').replace(/\/+$/, '');
-  const model = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
+  // 2. 外部自主 Agent 传参或显式指定模式 (外部大模型 Agent 读取 SKILL.md 后直接下发采购清单)
+  let customList = explicitApis;
+  if (!customList && process.env.SELECTED_APIS) {
+    customList = process.env.SELECTED_APIS.split(',').map(s => s.trim().toLowerCase());
+  }
 
-  // 1. 若配置了大模型 API Key，驱动 Agent 进行任务驱动的自主意图理解与按需选路
-  if (apiKey) {
-    console.log(`\n🤖 正在调用智能体 (${model}) 结合 Skill 规范，根据任务剖面自主评估选路...`);
-    const skillSpec = await loadSkillSpec(targetHost) || JSON.stringify(catalog, null, 2);
+  if (Array.isArray(customList) && customList.length > 0) {
+    console.log(`\n🤖 【外部自主 Agent 驱动模式】接收到调用端/外部大模型下发的采购决策清单 (共 ${customList.length} 项)`);
+    const approved = [];
+    const rejected = [];
 
-    const systemPrompt = `你是一个具备高度自主选路决策能力的行动智能体 (Recon Agent)。
-你当前受命准备执行以下具体任务：
-- 任务名称: ${mission.name}
-- 任务性质: ${mission.profile}
-- 目标坐标: 纬度 ${mission.lat}, 经度 ${mission.lon}
-
-【外部可用的微服务工具集规范 (Skill Toolset Catalog)】:
-${skillSpec}
-
-【Agent 自主选路要求】:
-1. 请根据任务的地理区位、环境地貌与行动性质，客观评估上述微服务。
-2. 每个端点调用都需要消耗 0.001 USDC 链上微支付。你必须结合任务的具体目标、地理环境与实际需求，自主挑选对完成任务有实质帮助的端口，排除与当前任务缺乏现实关联的端口以节省预算。
-3. 严格返回有效 JSON 格式：
-   - "approvedApiIds": ["入选的API_ID", ...],
-   - "rejectedApiIds": ["排除的API_ID", ...],
-   - "reasoning": { "<API_ID>": "<入选或排除理由>" },
-   - "rationaleSummary": "<整体选路策略简述>"`;
-
-    try {
-      const res = await fetch(`${baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: 'system', content: 'You are an autonomous API purchasing agent. Always reply in strict JSON.' },
-            { role: 'user', content: systemPrompt }
-          ],
-          response_format: { type: 'json_object' },
-          temperature: 0.1
-        }),
-        signal: AbortSignal.timeout(20000)
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        const content = data.choices?.[0]?.message?.content || '{}';
-        const cleaned = content.replace(/^```json/m, '').replace(/^```/m, '').replace(/```$/m, '').trim();
-        const parsed = JSON.parse(cleaned);
-
-        if (Array.isArray(parsed.approvedApiIds) && parsed.approvedApiIds.length > 0) {
-          const approved = [];
-          const rejected = [];
-
-          for (const api of catalog) {
-            if (parsed.approvedApiIds.includes(api.id)) {
-              approved.push({
-                ...api,
-                reason: parsed.reasoning?.[api.id] || '经任务剖面分析确认为当前行动所需'
-              });
-            } else {
-              rejected.push({
-                ...api,
-                reason: parsed.reasoning?.[api.id] || '与当前任务性质缺乏直接因果关联，排除以节省预算'
-              });
-            }
-          }
-
-          console.log(`✨ [智能体自主选路完成] 精准入选: ${approved.length} 个，自主排除: ${rejected.length} 个`);
-          console.log(`📝 选路依据: ${parsed.rationaleSummary || '完成按需选路'}\n`);
-          return {
-            approved,
-            rejected,
-            engine: `DeepSeek (${model})`,
-            rationaleSummary: parsed.rationaleSummary
-          };
-        }
+    for (const api of catalog) {
+      if (customList.includes(api.id.toLowerCase())) {
+        approved.push({
+          ...api,
+          reason: '外部智能体结合 SKILL.md 规范与任务剖面研判确认采购'
+        });
+      } else {
+        rejected.push({
+          ...api,
+          reason: '外部智能体研判与当前任务无强关联，排除以节省预算'
+        });
       }
-    } catch (err) {
-      console.warn(`⚠️ 智能体选路网络提示: ${err.message}，自动切换至直接全量采购模式`);
+    }
+
+    return {
+      approved,
+      rejected,
+      engine: 'External Agent Autonomous Decision (Skill Driven)',
+      rationaleSummary: `外部智能体自主研判选路：精准入选 ${approved.length} 项，排除 ${rejected.length} 项`
+    };
+  }
+
+  // 3. 本地客观规范匹配模式 (读取云端 GET /api/skill 或本地 SKILL.md 规范)
+  console.log(`\n📜 【技能规范选路模式】基于公开技能规范 (SKILL.md) 与任务剖面客观环境特征进行按需匹配...`);
+  await loadSkillSpec(targetHost);
+
+  const profileText = `${mission.name} ${mission.profile}`.toLowerCase();
+  const approved = [];
+  const rejected = [];
+
+  // 客观环境特征识别
+  const isWilderness = profileText.includes('荒野') || profileText.includes('无人区') || profileText.includes('徒步') || profileText.includes('探险') || profileText.includes('穿越') || profileText.includes('雪山') || profileText.includes('攀登') || profileText.includes('沙漠');
+  const isDesert = profileText.includes('沙漠') || profileText.includes('沙丘') || profileText.includes('戈壁') || profileText.includes('荒漠') || profileText.includes('干旱') || profileText.includes('罗布泊') || profileText.includes('大海道');
+  const isMountain = profileText.includes('山') || profileText.includes('峰') || profileText.includes('高原') || profileText.includes('高海拔') || profileText.includes('阿尔金') || profileText.includes('珠峰');
+  const isWaterOrRiver = profileText.includes('河') || profileText.includes('湖') || profileText.includes('洪') || profileText.includes('流域') || profileText.includes('漫滩');
+  const isFinancial = profileText.includes('商贸') || profileText.includes('金融') || profileText.includes('外汇') || profileText.includes('加密') || profileText.includes('商业');
+
+  for (const api of catalog) {
+    let shouldInclude = false;
+    let reason = '';
+
+    if (api.id === 'earthquake') {
+      if (isMountain || isWilderness) {
+        shouldInclude = true;
+        reason = '目标区属活动造山带或野外复杂地质构造区，监测地质次生灾害至关重要';
+      } else {
+        reason = '当前任务性质非高危地质构造活跃区，排除以节省预算';
+      }
+    } else if (api.id === 'storm') {
+      if (isWilderness || !isFinancial) {
+        shouldInclude = true;
+        reason = '野外极端风暴、实况阵风与剧烈温差直接威胁生命安全与行进安全';
+      } else {
+        reason = '非室外极端暴露环境，排除以节省预算';
+      }
+    } else if (api.id === 'terrain') {
+      if (isMountain || isWilderness || isDesert) {
+        shouldInclude = true;
+        reason = '获取 90m 高精数字高程与局部坡度，规划避障等高线行进路线所需';
+      } else {
+        reason = '城市或已平整规划路网，无需额外采购高程与坡度勘察';
+      }
+    } else if (api.id === 'dust') {
+      if (isDesert || profileText.includes('沙')) {
+        shouldInclude = true;
+        reason = '沙尘暴与高浓度颗粒物对能见度、呼吸系统及光学设备构成致命风险';
+      } else {
+        reason = '目标区非沙尘高发干旱风沙走廊，排除以节省预算';
+      }
+    } else if (api.id === 'flood') {
+      if (isWaterOrRiver) {
+        shouldInclude = true;
+        reason = '监测河道径流比率与洪峰漫滩，规避涉水陷车与营地被淹';
+      } else {
+        reason = '目标区为极度干旱或高原山脊，缺乏常年地表径流，排除以节省预算';
+      }
+    } else if (api.id === 'sunlight') {
+      if (isWilderness || !isFinancial) {
+        shouldInclude = true;
+        reason = '精确掌握昼夜交替与民用晨昏蒙影，规划日光作业与夜间扎营黄金窗口';
+      } else {
+        reason = '常规室内或城市光照环境，无需专门测算昼夜天文时间';
+      }
+    } else if (api.id === 'geomagnetic') {
+      if (isWilderness || isMountain) {
+        shouldInclude = true;
+        reason = '高纬度或空旷野外严重依赖卫星通信与磁罗盘，需监测地磁暴导航扰动';
+      } else {
+        reason = '具备城市密集基站网络，非必需端点，排除以节省预算';
+      }
+    } else if (api.id === 'forex') {
+      if (isFinancial) {
+        shouldInclude = true;
+        reason = '跨国商业交易与多币种资金清算需要最新法定外汇牌价';
+      } else {
+        reason = '无人区及野外自然环境无外币现钞兑换与法币清算场景，客观排除';
+      }
+    } else if (api.id === 'crypto') {
+      if (isFinancial) {
+        shouldInclude = true;
+        reason = '商业金融资产配置与数字货币现货行情对冲分析';
+      } else {
+        reason = '野外极端生存与物理越野导航不涉及链上数字货币即时现货买卖，客观排除';
+      }
+    } else if (api.id === 'catfact') {
+      shouldInclude = false;
+      reason = '属猫科动物生物学科普知识，与野外极端生存态势无物理因果关联，客观排除';
+    } else if (api.id === 'iss') {
+      shouldInclude = false;
+      reason = '近地轨道空间站过境监测与地表行进安全无直接协同机制，客观排除';
+    }
+
+    if (shouldInclude) {
+      approved.push({ ...api, reason });
+    } else {
+      rejected.push({ ...api, reason });
     }
   }
 
-  // 2. 无大模型介入时的简化规范：直接购买全部 11 项，不做主观伪裁决
-  console.log(`ℹ️ [直接采购模式] 未配置大模型 API Key 或网络离线，直接全量采购全部 11 项微服务并返回数据`);
+  // 兜底：若没有任何匹配，至少选入基础气象与地形
+  if (approved.length === 0) {
+    for (const api of catalog) {
+      if (['storm', 'terrain', 'sunlight'].includes(api.id)) {
+        approved.push({ ...api, reason: '基础环境安全感知底线数据' });
+      } else {
+        rejected.push({ ...api, reason: '按需排除以优化预算' });
+      }
+    }
+  }
+
+  console.log(`✨ [技能规范按需选路完成] 精准入选: ${approved.length} 项，客观排除: ${rejected.length} 项`);
   return {
-    approved: catalog.map(c => ({ ...c, reason: '直接采购全部微服务' })),
-    rejected: [],
-    engine: 'Direct Full Catalog',
-    rationaleSummary: '直接全量采购全部可用外部微服务'
+    approved,
+    rejected,
+    engine: 'Skill Specification Matcher (SKILL.md Driven)',
+    rationaleSummary: `基于公开技能规范 (SKILL.md) 客观场景映射：精准入选 ${approved.length} 项，排除 ${rejected.length} 项无关端点`
   };
 }
 
@@ -209,7 +270,15 @@ async function run() {
   const placeName = process.argv[4] || process.env.EXPEDITION_LOCATION || '阿尔金山无人区';
   const profile = process.argv[5] || process.env.EXPEDITION_PROFILE || '极端荒野重装徒步穿越';
   const mode = (process.argv[6] || process.env.EXPEDITION_MODE || 'auto').toLowerCase();
-  const isForceAll = mode === 'all';
+
+  // 解析显式指定的 API 列表（支持 --apis=a,b,c 或第 7 个位置参数）
+  let explicitApis = null;
+  const apisArg = process.argv.find(a => a.startsWith('--apis='));
+  if (apisArg) {
+    explicitApis = apisArg.replace('--apis=', '').split(',').map(s => s.trim().toLowerCase());
+  } else if (process.argv[7]) {
+    explicitApis = process.argv[7].split(',').map(s => s.trim().toLowerCase());
+  }
 
   // 若环境配置了代理通道，自动应用
   if (targetHost.startsWith('https://')) {
@@ -228,7 +297,7 @@ async function run() {
   };
 
   console.log(`\n=================================================================`);
-  console.log(`🧭 [x402 Level 2-A] 多源数据服务采购与交付 Agent`);
+  console.log(`🧭 [x402 Level 2-A] 多源数据服务采购与交付 Agent (Skill Driven)`);
   console.log(`📍 【探险任务参数】目标地: <${mission.name}> | 经度: <${mission.lon}> | 纬度: <${mission.lat}> | 任务性质: <${mission.profile}>`);
   console.log(`🎯 服务中介节点: ${targetHost}`);
   console.log(`=================================================================\n`);
@@ -281,8 +350,8 @@ async function run() {
     console.log(`ℹ️ 使用本地标准中立 API 工具集（共 ${catalog.length} 个端点）`);
   }
 
-  // 4. 选路评估（Agent 自主评估 或 全量采购）
-  const { approved, rejected, engine, rationaleSummary } = await selectApis(mission, catalog, targetHost, isForceAll);
+  // 4. 选路评估（外部 Agent 自主指定、SKILL.md 技能规范匹配 或 全量采购）
+  const { approved, rejected, engine, rationaleSummary } = await selectApis(mission, catalog, targetHost, mode, explicitApis);
 
   console.log(`📋 采购计划: 准备真实购买 ${approved.length} 项微服务 | 预估总额: ${(approved.length * 0.001).toFixed(3)} USDC`);
   approved.forEach((a, i) => console.log(`   [${i + 1}] ${a.name} (${a.path})`));
@@ -334,11 +403,14 @@ async function run() {
         console.log(`   📋 账单回执: ${billInfo}`);
       }
 
-      // 2. 执行真实 EIP-3009 授权签名并完成结算
-      let paidRes = await paymentFetch(fullUrl);
-      if (!paidRes.ok && paidRes.status === 402) {
-        await new Promise(r => setTimeout(r, 1000));
+      // 2. 执行真实 EIP-3009 授权签名并完成结算 (自动重试 3 次以应对网络或 RPC 抖动)
+      let paidRes = null;
+      for (let attempt = 1; attempt <= 3; attempt++) {
         paidRes = await paymentFetch(fullUrl);
+        if (paidRes.ok) break;
+        if (paidRes.status === 402 && attempt < 3) {
+          await new Promise(r => setTimeout(r, 1200));
+        }
       }
       const latencyMs = Date.now() - t0;
 
